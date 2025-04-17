@@ -1,0 +1,13 @@
+{
+  "name": "cli",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "cli.js",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "filesize": "^10.1.2",
+    "glob": "^10.4.2",
+    "isbinaryfile": "^5.0.2",
+    "meow": "^13.2.0"
+  }
+}
