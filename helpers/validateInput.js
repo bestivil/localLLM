@@ -31,9 +31,10 @@ export async function validateInput(input, fileName) {
         console.log(chalk.blue("Debug: Valid file path:"), sourcePath);
       }
       return {
-        resolvedPath: path.dirname(fileName),
+        resolvedPath: fileName,
         type: "file",
         repoRoot: repoRoot.stdout.trim(),
+        directoryName: path.dirname(fileName),
       };
     } else if (stats.isDirectory()) {
       try {

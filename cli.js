@@ -66,6 +66,11 @@ export const cli = meow(helpText, {
       type: "string",
       shortFlag: "f",
     },
+    onlyExtractSingleFile: {
+      type: "boolean",
+      default: false,
+      shortFlag: "single",
+    },
   },
 });
 
@@ -104,7 +109,7 @@ export async function writeOutput(content, outputPath) {
  */
 export async function main() {
   try {
-    const { resolvedPath, type, repoRoot } = await validateInput(
+    const { resolvedPath, type, repoRoot, directoryName } = await validateInput(
       cli.input,
       cli.flags.file
     );
@@ -112,14 +117,14 @@ export async function main() {
     let targetPaths = [];
     let processingMode = "unknown";
     let outputPath = cli.flags.output;
+    const repoName = path.basename(repoRoot);
+    const onlyExtractSingleFile = cli.flags.onlyExtractSingleFile;
 
     if (type === "file") {
-      targetPaths = [resolvedPath];
+      targetPaths = onlyExtractSingleFile ? [resolvedPath] : [directoryName];
       processingMode = "file";
       if (!outputPath) {
-        const inputFilename = path.basename(resolvedPath);
-        const ext = path.extname(inputFilename);
-        outputPath = `${inputFilename.slice(0, -ext.length)}.txt`;
+        outputPath = `${repoName}.txt`;
       }
       if (cli.flags.debug) {
         console.log(
@@ -127,7 +132,6 @@ export async function main() {
         );
       }
     } else if (type === "directory") {
-      const repoName = path.basename(repoRoot);
       if (!outputPath) {
         outputPath = `${repoName}.txt`;
       }
