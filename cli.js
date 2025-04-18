@@ -4,28 +4,26 @@ import meow from "meow";
 import chalk from "chalk";
 import fs from "fs/promises";
 import path from "path";
-import { filesize as formatFileSize } from "filesize";
-import { isBinaryFile } from "isbinaryfile";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { processFiles } from "./helpers/processFiles.js";
+import { validateInput } from "./helpers/validateInput.js";
+import { handleWorkspaceMode } from "./helpers/handleWorkspaceMode.js";
 
 const execAsync = promisify(exec);
 
 const helpText = `
   ${chalk.bold("Usage")}
-    $ git2txt <local-repo-path>
+    $ localllm <local-repo-path> [options]
 
   ${chalk.bold("Options")}
     --output, -o     Specify output file path (default: <repo-name>.txt)
     --threshold, -t  Set file size threshold in MB (default: 0.1)
     --include-all    Include all files regardless of size or type
+    --modules, -m    Specify specific workspace packages to include (repeatable, e.g., -m pkg1 -m pkg2)
     --debug         Enable debug mode with verbose logging
     --help          Show help
-    --version       Show version
-
-  ${chalk.bold("Examples")}
-    $ git2txt ./path/to/local/repository
-    $ git2txt ../another-repo --output=output.txt
+    --version       Show version 
 `;
 
 /**
@@ -61,160 +59,13 @@ export const cli = meow(helpText, {
       type: "boolean",
       default: false,
     },
+    modules: {
+      type: "string",
+      shortFlag: "m",
+      isMultiple: true,
+    },
   },
 });
-
-/**
- * Validates the command line input, ensuring it's a local git repository path.
- * @param {string[]} input - Command line arguments
- * @returns {Promise<string>} Validated absolute local repository path
- * @throws {Error} If input is missing or invalid
- */
-export async function validateInput(input) {
-  if (!input || input.length === 0) {
-    throw new Error("Local repository path is required");
-  }
-
-  const sourcePath = input[0];
-
-  try {
-    const stats = await fs.stat(sourcePath);
-    if (!stats.isDirectory()) {
-      throw new Error(`Path '${sourcePath}' is not a directory.`);
-    }
-
-    try {
-      await execAsync(`git -C "${sourcePath}" rev-parse --is-inside-work-tree`);
-
-      if (cli.flags.debug) {
-        console.log(
-          chalk.blue("Debug: Valid local git repository path:"),
-          sourcePath
-        );
-      }
-      return path.resolve(sourcePath);
-    } catch (gitError) {
-      throw new Error(
-        `Directory '${sourcePath}' exists but is not a git repository.`
-      );
-    }
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      throw new Error(`Local path '${sourcePath}' not found.`);
-    }
-
-    throw error;
-  }
-}
-
-/**
- * Processes files in the repository directory and combines them into a single text output
- * @param {string} directory - Path to the repository directory
- * @param {Object} options - Processing options
- * @param {number} options.threshold - File size threshold in MB
- * @param {boolean} options.includeAll - Whether to include all files regardless of size/type
- * @returns {Promise<string>} Combined content of all processed files
- * @throws {Error} If file processing fails
- */
-export async function processFiles(directory, options) {
-  if (process.env.NODE_ENV !== "test" && !cli.flags.debug) {
-    console.log(chalk.blue("Processing files..."));
-  }
-  const thresholdBytes = options.threshold * 1024 * 1024;
-  let output = "";
-  let processedFiles = 0;
-  let skippedFiles = 0;
-
-  /**
-   * Recursively processes files in a directory
-   * @param {string} dir - Directory to process
-   */
-  async function processDirectory(dir) {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-
-      if (
-        entry.isDirectory() &&
-        entry.name !== "node_modules" &&
-        entry.name !== ".git"
-      ) {
-        await processDirectory(fullPath);
-        continue;
-      }
-
-      if (!entry.isFile()) continue;
-
-      try {
-        const stats = await fs.stat(fullPath);
-
-        if (!options.includeAll && stats.size > thresholdBytes) {
-          if (process.env.DEBUG)
-            console.log(`Skipping large file: ${entry.name}`);
-          skippedFiles++;
-          continue;
-        }
-
-        if (!options.includeAll) {
-          if (await isBinaryFile(fullPath)) {
-            if (cli.flags.debug)
-              console.log(
-                `Skipping binary file: ${path.relative(directory, fullPath)}`
-              );
-            skippedFiles++;
-            continue;
-          }
-        }
-
-        const content = await fs.readFile(fullPath, "utf8");
-        const relativePath = path.relative(directory, fullPath);
-
-        output += `\n${"=".repeat(80)}\n`;
-        output += `File: ${relativePath}\n`;
-        output += `Size: ${formatFileSize(stats.size)}\n`;
-        output += `${"=".repeat(80)}\n\n`;
-        output += `${content}\n`;
-
-        processedFiles++;
-
-        if (process.env.DEBUG) {
-          console.log(`Processed file: ${relativePath}`);
-        }
-      } catch (error) {
-        if (process.env.DEBUG) {
-          console.error(`Error processing ${entry.name}:`, error);
-        }
-        skippedFiles++;
-      }
-    }
-  }
-
-  try {
-    await processDirectory(directory);
-
-    if (process.env.NODE_ENV !== "test" && !cli.flags.debug) {
-      console.log(
-        chalk.green(
-          `Processed ${processedFiles} files successfully (${skippedFiles} skipped).`
-        )
-      );
-    }
-
-    if (processedFiles === 0 && cli.flags.debug) {
-      console.warn(
-        "Warning: No text files were processed (check filters/threshold/repo content)."
-      );
-    }
-
-    return output;
-  } catch (error) {
-    if (process.env.NODE_ENV !== "test" && !cli.flags.debug) {
-      console.error(chalk.red("Failed to process files."));
-    }
-    throw error;
-  }
-}
 
 /**
  * Writes the processed content to an output file
@@ -253,28 +104,89 @@ export async function main() {
   try {
     const repoPath = await validateInput(cli.input);
     const repoName = path.basename(repoPath);
+    const outputPath = cli.flags.output || `${repoName}.txt`;
+    let targetPackageDirs = [];
+    let processingMode = "repo";
 
-    if (process.env.NODE_ENV !== "test") {
-      const outputPath = cli.flags.output || `${repoName}.txt`;
+    const requestedModules = cli.flags.modules;
+
+    if (requestedModules && requestedModules.length > 0) {
+      processingMode = "modules";
+      targetPackageDirs = await handleWorkspaceMode(repoPath, requestedModules);
+    } else {
+      targetPackageDirs = [repoPath];
       if (cli.flags.debug) {
         console.log(
-          chalk.blue("Debug: Processing local repository:"),
-          repoPath
-        );
-        console.log(chalk.blue("Debug: Output path:"), outputPath);
-      }
-
-      const content = await processFiles(repoPath, {
-        threshold: cli.flags.threshold,
-        includeAll: cli.flags.includeAll,
-      });
-
-      if (!content && !cli.flags.includeAll) {
-        console.warn(
-          chalk.yellow(
-            "Warning: No processable text content found. Output file will be empty or not created."
+          chalk.blue(
+            "Debug: No modules flag detected. Processing entire repository."
           )
         );
+      }
+    }
+
+    if (targetPackageDirs.length > 0) {
+      let combinedContent = "";
+      let totalProcessedFiles = 0;
+      let totalSkippedFiles = 0;
+
+      if (process.env.NODE_ENV !== "test" || cli.flags.debug) {
+        console.log(
+          chalk.blue(`Processing targets (${processingMode} mode):`),
+          targetPackageDirs.map((p) => path.relative(repoPath, p) || ".")
+        );
+        if (cli.flags.debug) {
+          console.log(chalk.blue("Debug: Output path:"), outputPath);
+        }
+      }
+
+      for (const targetDir of targetPackageDirs) {
+        if (process.env.NODE_ENV !== "test" || cli.flags.debug) {
+          console.log(
+            chalk.blue(
+              `--- Processing directory: ${
+                path.relative(repoPath, targetDir) || "."
+              } ---`
+            )
+          );
+        }
+        try {
+          const result = await processFiles(targetDir, {
+            threshold: cli.flags.threshold,
+            includeAll: cli.flags.includeAll,
+            debug: cli.flags.debug,
+            repoRoot: repoPath,
+          });
+
+          combinedContent += result.output;
+          totalProcessedFiles += result.processedFiles;
+          totalSkippedFiles += result.skippedFiles;
+        } catch (processError) {
+          console.error(
+            chalk.red(
+              `Error processing directory ${targetDir}: ${processError.message}`
+            )
+          );
+          if (cli.flags.debug) {
+            console.error(processError.stack);
+          }
+        }
+      }
+
+      if (process.env.NODE_ENV !== "test" || cli.flags.debug) {
+        console.log(
+          chalk.green(
+            `Total processed files: ${totalProcessedFiles}, Total skipped files: ${totalSkippedFiles}`
+          )
+        );
+      }
+
+      if (!combinedContent && !cli.flags.includeAll) {
+        const warningMsg =
+          processingMode === "modules"
+            ? "Warning: No processable text content found in the selected packages. Output file will be empty or not created."
+            : "Warning: No processable text content found in the repository. Output file will be empty or not created.";
+        console.warn(chalk.yellow(warningMsg));
+
         if (cli.flags.output) {
           await writeOutput("", outputPath);
           console.log(
@@ -290,7 +202,21 @@ export async function main() {
           );
         }
       } else {
-        await writeOutput(content || "", outputPath);
+        await writeOutput(combinedContent || "", outputPath);
+      }
+    } else {
+      console.log(
+        chalk.yellow(
+          "No packages selected or found for processing. Skipping file processing and output."
+        )
+      );
+      if (cli.flags.output) {
+        await writeOutput("", outputPath);
+        console.log(
+          chalk.yellow(
+            `Created empty output file at ${outputPath} as specified, but no packages were processed.`
+          )
+        );
       }
     }
   } catch (error) {
