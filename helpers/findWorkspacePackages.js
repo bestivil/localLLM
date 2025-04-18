@@ -96,6 +96,5 @@ export async function findWorkspacePackages(repoRoot) {
       Object.fromEntries(packages)
     );
   }
-
   return packages;
 }

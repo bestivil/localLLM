@@ -4,13 +4,11 @@ import meow from "meow";
 import chalk from "chalk";
 import fs from "fs/promises";
 import path from "path";
-import { exec } from "child_process";
-import { promisify } from "util";
 import { processFiles } from "./helpers/processFiles.js";
 import { validateInput } from "./helpers/validateInput.js";
-import { handleWorkspaceMode } from "./helpers/handleWorkspaceMode.js";
-
-const execAsync = promisify(exec);
+import { handleModuleFlag } from "./helpers/handleWorkspaceMode.js";
+import { createWorkspaceIndex } from "./helpers/workspaceIndex.js";
+import { findWorkspacePackages } from "./helpers/findWorkspacePackages.js";
 
 const helpText = `
   ${chalk.bold("Usage")}
@@ -103,26 +101,22 @@ export async function writeOutput(content, outputPath) {
 export async function main() {
   try {
     const repoPath = await validateInput(cli.input);
+    const allPackages = await findWorkspacePackages(repoPath);
     const repoName = path.basename(repoPath);
     const outputPath = cli.flags.output || `${repoName}.txt`;
-    let targetPackageDirs = [];
-    let processingMode = "repo";
 
-    const requestedModules = cli.flags.modules;
-
-    if (requestedModules && requestedModules.length > 0) {
-      processingMode = "modules";
-      targetPackageDirs = await handleWorkspaceMode(repoPath, requestedModules);
-    } else {
-      targetPackageDirs = [repoPath];
-      if (cli.flags.debug) {
-        console.log(
-          chalk.blue(
-            "Debug: No modules flag detected. Processing entire repository."
-          )
-        );
-      }
+    try {
+      await createWorkspaceIndex(allPackages, repoPath, cli.flags.debug);
+    } catch (error) {
+      console.error(chalk.red("Error creating workspace index:"), error);
     }
+
+    const { targetPackageDirs, processingMode } = await handleModuleFlag(
+      allPackages,
+      repoPath,
+      cli.flags.modules,
+      cli.flags.debug
+    );
 
     if (targetPackageDirs.length > 0) {
       let combinedContent = "";
