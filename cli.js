@@ -6,17 +6,17 @@ import fs from "fs/promises";
 import path from "path";
 import { processFiles } from "./helpers/processFiles.js";
 import { validateInput } from "./helpers/validateInput.js";
-import { handleModuleFlag } from "./helpers/handleWorkspaceMode.js";
+import { handleModuleFlag } from "./helpers/handleModuleFlag.js";
 import { createWorkspaceIndex } from "./helpers/workspaceIndex.js";
 import { findWorkspacePackages } from "./helpers/findWorkspacePackages.js";
-
+import { handleFileFlag } from "./helpers/handleFileFlag.js";
 const helpText = `
   ${chalk.bold("Usage")}
     $ localllm <local-repo-path> [options]
 
   ${chalk.bold("Options")}
     --output, -o     Specify output file path (default: <repo-name>.txt)
-    --threshold, -t  Set file size threshold in MB (default: 0.1)
+    --threshold, -t  Set file size threshold in MB (default: 10)
     --include-all    Include all files regardless of size or type
     --modules, -m    Specify specific workspace packages to include (repeatable, e.g., -m pkg1 -m pkg2)
     --debug         Enable debug mode with verbose logging
@@ -47,7 +47,7 @@ export const cli = meow(helpText, {
     threshold: {
       type: "number",
       shortFlag: "t",
-      default: 0.1,
+      default: 10,
     },
     includeAll: {
       type: "boolean",
@@ -61,6 +61,10 @@ export const cli = meow(helpText, {
       type: "string",
       shortFlag: "m",
       isMultiple: true,
+    },
+    file: {
+      type: "string",
+      shortFlag: "f",
     },
   },
 });
@@ -100,55 +104,97 @@ export async function writeOutput(content, outputPath) {
  */
 export async function main() {
   try {
-    const repoPath = await validateInput(cli.input);
-    const allPackages = await findWorkspacePackages(repoPath);
-    const repoName = path.basename(repoPath);
-    const outputPath = cli.flags.output || `${repoName}.txt`;
-
-    try {
-      await createWorkspaceIndex(allPackages, repoPath, cli.flags.debug);
-    } catch (error) {
-      console.error(chalk.red("Error creating workspace index:"), error);
-    }
-
-    const { targetPackageDirs, processingMode } = await handleModuleFlag(
-      allPackages,
-      repoPath,
-      cli.flags.modules,
-      cli.flags.debug
+    const { resolvedPath, type, repoRoot } = await validateInput(
+      cli.input,
+      cli.flags.file
     );
 
-    if (targetPackageDirs.length > 0) {
+    let targetPaths = [];
+    let processingMode = "unknown";
+    let outputPath = cli.flags.output;
+
+    if (type === "file") {
+      targetPaths = [resolvedPath];
+      processingMode = "file";
+      if (!outputPath) {
+        const inputFilename = path.basename(resolvedPath);
+        const ext = path.extname(inputFilename);
+        outputPath = `${inputFilename.slice(0, -ext.length)}.txt`;
+      }
+      if (cli.flags.debug) {
+        console.log(
+          chalk.blue(`Debug: Processing single file: ${resolvedPath}`)
+        );
+      }
+    } else if (type === "directory") {
+      const repoName = path.basename(repoRoot);
+      if (!outputPath) {
+        outputPath = `${repoName}.txt`;
+      }
+
+      const allPackages = await findWorkspacePackages(repoRoot);
+
+      try {
+        await createWorkspaceIndex(allPackages, repoRoot, cli.flags.debug);
+      } catch (error) {
+        console.error(chalk.red("Error creating workspace index:"), error);
+      }
+
+      if (cli.flags.file) {
+        const fileResult = await handleFileFlag(cli.flags.file);
+        targetPaths = fileResult.targetDirs;
+        processingMode = fileResult.processingMode;
+      } else {
+        const moduleResult = await handleModuleFlag(
+          allPackages,
+          repoRoot,
+          cli.flags.modules,
+          cli.flags.debug
+        );
+        targetPaths = moduleResult.targetPackageDirs;
+        processingMode = moduleResult.processingMode;
+      }
+    }
+
+    if (!outputPath) {
+      console.warn(
+        chalk.yellow(
+          "Warning: Output path could not be determined. Using default 'output.txt'."
+        )
+      );
+      outputPath = "output.txt";
+    }
+
+    if (targetPaths.length > 0) {
       let combinedContent = "";
       let totalProcessedFiles = 0;
       let totalSkippedFiles = 0;
 
       if (process.env.NODE_ENV !== "test" || cli.flags.debug) {
+        const displayPaths = targetPaths.map(
+          (p) => path.relative(repoRoot, p) || path.basename(p)
+        );
         console.log(
           chalk.blue(`Processing targets (${processingMode} mode):`),
-          targetPackageDirs.map((p) => path.relative(repoPath, p) || ".")
+          displayPaths
         );
         if (cli.flags.debug) {
           console.log(chalk.blue("Debug: Output path:"), outputPath);
         }
       }
 
-      for (const targetDir of targetPackageDirs) {
+      for (const targetPath of targetPaths) {
         if (process.env.NODE_ENV !== "test" || cli.flags.debug) {
-          console.log(
-            chalk.blue(
-              `--- Processing directory: ${
-                path.relative(repoPath, targetDir) || "."
-              } ---`
-            )
-          );
+          const displayPath =
+            path.relative(repoRoot, targetPath) || path.basename(targetPath);
+          console.log(chalk.blue(`--- Processing target: ${displayPath} ---`));
         }
         try {
-          const result = await processFiles(targetDir, {
+          const result = await processFiles(targetPath, {
             threshold: cli.flags.threshold,
             includeAll: cli.flags.includeAll,
             debug: cli.flags.debug,
-            repoRoot: repoPath,
+            repoRoot: repoRoot,
           });
 
           combinedContent += result.output;
@@ -156,9 +202,7 @@ export async function main() {
           totalSkippedFiles += result.skippedFiles;
         } catch (processError) {
           console.error(
-            chalk.red(
-              `Error processing directory ${targetDir}: ${processError.message}`
-            )
+            chalk.red(`Error processing ${targetPath}: ${processError.message}`)
           );
           if (cli.flags.debug) {
             console.error(processError.stack);
@@ -178,6 +222,10 @@ export async function main() {
         const warningMsg =
           processingMode === "modules"
             ? "Warning: No processable text content found in the selected packages. Output file will be empty or not created."
+            : processingMode === "file"
+            ? `Warning: No processable text content found in the input file: ${path.basename(
+                resolvedPath
+              )}. Output file will be empty or not created.`
             : "Warning: No processable text content found in the repository. Output file will be empty or not created.";
         console.warn(chalk.yellow(warningMsg));
 
