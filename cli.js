@@ -71,6 +71,11 @@ export const cli = meow(helpText, {
       default: false,
       shortFlag: "single",
     },
+    includeDependencies: {
+      type: "boolean",
+      default: false,
+      shortFlag: "d",
+    },
   },
 });
 
@@ -109,24 +114,30 @@ export async function writeOutput(content, outputPath) {
  */
 export async function main() {
   try {
-    const { resolvedPath, type, repoRoot, directoryName } = await validateInput(
-      cli.input,
-      cli.flags.file
-    );
+    const fileFlag = cli.flags.file;
+    const outputFlag = cli.flags.output;
+    const modulesFlag = cli.flags.modules;
+    const debugFlag = cli.flags.debug;
+    const onlyExtractSingleFileFlag = cli.flags.onlyExtractSingleFile;
+
+    const { resolvedPath, type, fileDirectoryName, repoRoot } =
+      await validateInput(cli.input, fileFlag);
 
     let targetPaths = [];
     let processingMode = "unknown";
-    let outputPath = cli.flags.output;
+    let outputPath = outputFlag;
     const repoName = path.basename(repoRoot);
-    const onlyExtractSingleFile = cli.flags.onlyExtractSingleFile;
+    const onlyExtractSingleFile = onlyExtractSingleFileFlag;
 
     if (type === "file") {
-      targetPaths = onlyExtractSingleFile ? [resolvedPath] : [directoryName];
+      targetPaths = onlyExtractSingleFile
+        ? [resolvedPath]
+        : [fileDirectoryName];
       processingMode = "file";
       if (!outputPath) {
         outputPath = `${repoName}.txt`;
       }
-      if (cli.flags.debug) {
+      if (debugFlag) {
         console.log(
           chalk.blue(`Debug: Processing single file: ${resolvedPath}`)
         );
@@ -135,29 +146,29 @@ export async function main() {
       if (!outputPath) {
         outputPath = `${repoName}.txt`;
       }
+    }
 
-      const allPackages = await findWorkspacePackages(repoRoot);
+    const allPackages = await findWorkspacePackages(repoRoot);
+    await createWorkspaceIndex(allPackages, repoRoot, debugFlag);
 
-      try {
-        await createWorkspaceIndex(allPackages, repoRoot, cli.flags.debug);
-      } catch (error) {
-        console.error(chalk.red("Error creating workspace index:"), error);
-      }
-
-      if (cli.flags.file) {
-        const fileResult = await handleFileFlag(cli.flags.file);
-        targetPaths = fileResult.targetDirs;
-        processingMode = fileResult.processingMode;
-      } else {
-        const moduleResult = await handleModuleFlag(
-          allPackages,
-          repoRoot,
-          cli.flags.modules,
-          cli.flags.debug
-        );
-        targetPaths = moduleResult.targetPackageDirs;
-        processingMode = moduleResult.processingMode;
-      }
+    if (!!fileFlag) {
+      const fileResult = await handleFileFlag(
+        resolvedPath,
+        repoRoot,
+        cli.flags.includeDependencies,
+        cli.flags.debug
+      );
+      targetPaths = fileResult.targetPaths;
+      processingMode = fileResult.processingMode;
+    } else {
+      const moduleResult = await handleModuleFlag(
+        allPackages,
+        repoRoot,
+        modulesFlag,
+        debugFlag
+      );
+      targetPaths = moduleResult.targetPackageDirs;
+      processingMode = moduleResult.processingMode;
     }
 
     if (!outputPath) {

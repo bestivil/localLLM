@@ -34,7 +34,7 @@ export async function validateInput(input, fileName) {
         resolvedPath: fileName,
         type: "file",
         repoRoot: repoRoot.stdout.trim(),
-        directoryName: path.dirname(fileName),
+        fileDirectoryName: path.dirname(fileName),
       };
     } else if (stats.isDirectory()) {
       try {
