@@ -76,6 +76,11 @@ export const cli = meow(helpText, {
       default: false,
       shortFlag: "d",
     },
+    directDeps: {
+      type: "boolean",
+      default: false,
+      shortFlag: "a",
+    },
   },
 });
 
@@ -119,7 +124,6 @@ export async function main() {
     const modulesFlag = cli.flags.modules;
     const debugFlag = cli.flags.debug;
     const onlyExtractSingleFileFlag = cli.flags.onlyExtractSingleFile;
-
     const { resolvedPath, type, fileDirectoryName, repoRoot } =
       await validateInput(cli.input, fileFlag);
 
@@ -151,12 +155,18 @@ export async function main() {
     const allPackages = await findWorkspacePackages(repoRoot);
     await createWorkspaceIndex(allPackages, repoRoot, debugFlag);
 
+    console.log({
+      includeDependencies: cli.flags.includeDependencies,
+      directDeps: cli.flags.directDeps,
+    });
+
     if (!!fileFlag) {
       const fileResult = await handleFileFlag(
         resolvedPath,
         repoRoot,
         cli.flags.includeDependencies,
-        cli.flags.debug
+        cli.flags.debug,
+        cli.flags.directDeps
       );
       targetPaths = fileResult.targetPaths;
       processingMode = fileResult.processingMode;
