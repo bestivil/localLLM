@@ -152,7 +152,7 @@ export async function main() {
       }
     }
 
-    const allPackages = await findWorkspacePackages(repoRoot);
+    const allPackages = await findWorkspacePackages(resolvedPath);
     await createWorkspaceIndex(allPackages, repoRoot, debugFlag);
 
     console.log({
