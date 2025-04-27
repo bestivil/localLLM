@@ -42,8 +42,7 @@ export async function getDirectDependencies(
         importItem.package,
         importItem.function,
         workspaceIndex,
-        repoRoot,
-        debugFlag
+        repoRoot
       );
       if (resolvedPath) {
         directDependencyPaths.push(...resolvedPath);
@@ -70,8 +69,7 @@ async function findPackageEntryPointRelativePath(
   packageName,
   functionName,
   workspaceIndex,
-  repoRoot,
-  debugFlag = false
+  repoRoot
 ) {
   const packageInfo = workspaceIndex.get(packageName);
   const packageDir = packageInfo.path;
@@ -83,33 +81,31 @@ async function findPackageEntryPointRelativePath(
       `grep -rw "${functionName}" "${fullPackageDir}"`
     );
 
-    if (!stdout) {
-      return;
-    }
+    if (stdout) {
+      const lines = stdout.split("\n").filter((line) => line.trim());
 
-    const lines = stdout.split("\n").filter((line) => line.trim());
+      for (const line of lines) {
+        const filePath = line.split(":", 1)[0];
+        const hasValidExtension = extensions.some((ext) =>
+          filePath.endsWith(ext)
+        );
 
-    for (const line of lines) {
-      const filePath = line.split(":", 1)[0];
-      const hasValidExtension = extensions.some((ext) =>
-        filePath.endsWith(ext)
-      );
+        if (!hasValidExtension) {
+          continue;
+        }
 
-      if (!hasValidExtension) {
-        continue;
+        const fileExports = await getExportsFromFile(filePath);
+        const exportsRequestedFunction =
+          fileExports.exports.includes(functionName);
+
+        if (exportsRequestedFunction) {
+          const relativePath = path.relative(repoRoot, filePath);
+          filePathOptions.add(relativePath);
+        }
       }
 
-      const fileExports = await getExportsFromFile(filePath);
-      const exportsRequestedFunction =
-        fileExports.exports.includes(functionName);
-
-      if (exportsRequestedFunction) {
-        const relativePath = path.relative(repoRoot, filePath);
-        filePathOptions.add(relativePath);
-      }
+      return Array.from(filePathOptions);
     }
-
-    return Array.from(filePathOptions);
   } catch (error) {
     if (error.code === 1) {
       return null;

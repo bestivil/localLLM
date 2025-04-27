@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import chalk from "chalk";
-import { findWorkspacePackages } from "./findWorkspacePackages.js";
+import { pathToFileURL } from "url";
 
 export const createWorkspaceIndex = async (allPackages, repoPath, debug) => {
   const workspaceIndexPath = path.join(repoPath, "workspace-index.js");
@@ -47,3 +47,75 @@ export const createWorkspaceIndex = async (allPackages, repoPath, debug) => {
     );
   }
 };
+
+/**
+ * Loads workspace data from workspace-index.js.
+ * @param {string} repoRoot - Absolute path to the repository root.
+ * @param {boolean} debug - Whether debug mode is enabled.
+ * @returns {Promise<Map<string, {path: string, description: string, exports: object}>>} Map of package names to their info.
+ */
+export async function loadWorkspaceIndex(repoRoot, debug) {
+  const workspaceIndexPath = path.join(repoRoot, "workspace-index.js");
+  const workspaceIndexUrl =
+    pathToFileURL(workspaceIndexPath).href + `?t=${Date.now()}`;
+
+  if (debug) {
+    console.log(
+      chalk.gray(`  Attempting to load workspace index: ${workspaceIndexPath}`)
+    );
+  }
+
+  try {
+    const workspaceModule = await import(workspaceIndexUrl);
+    if (workspaceModule && Array.isArray(workspaceModule.workspaces)) {
+      const packageMap = new Map();
+      workspaceModule.workspaces.forEach((pkg) => {
+        if (pkg && pkg.name && pkg.path) {
+          packageMap.set(pkg.name, pkg);
+        } else if (debug) {
+          console.warn(
+            chalk.gray(
+              `  Skipping invalid entry in workspace-index.js: ${JSON.stringify(
+                pkg
+              )}`
+            )
+          );
+        }
+      });
+      if (debug) {
+        console.log(
+          chalk.gray(
+            `  Successfully loaded ${packageMap.size} packages from workspace index.`
+          )
+        );
+      }
+      return packageMap;
+    } else {
+      if (debug) {
+        console.warn(
+          chalk.gray(
+            `  workspace-index.js loaded but 'workspaces' array not found or invalid.`
+          )
+        );
+      }
+      return new Map();
+    }
+  } catch (error) {
+    if (
+      debug ||
+      (error.code !== "ERR_MODULE_NOT_FOUND" && error.code !== "ENOENT")
+    ) {
+      console.warn(
+        chalk.yellow(
+          `  Warning: Could not load or parse ${path.basename(
+            workspaceIndexPath
+          )}: ${error.message}`
+        )
+      );
+    }
+    if (debug && error.code === "ERR_MODULE_NOT_FOUND") {
+      console.log(chalk.gray(`  workspace-index.js not found.`));
+    }
+    return new Map();
+  }
+}

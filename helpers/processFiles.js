@@ -3,7 +3,7 @@ import path from "path";
 import { filesize as formatFileSize } from "filesize";
 import { isBinaryFile } from "isbinaryfile";
 import chalk from "chalk";
-import { cli } from "../cli.js";
+import { exclusions } from "./exclusions.js";
 
 /**
  * Processes files in a target path (file or directory) and combines them into a single text output.
@@ -33,21 +33,40 @@ export async function processFiles(targetPath, options) {
    */
   async function processSingleFile(fullPath, stats) {
     try {
-      if (!includeAll && stats.size > thresholdBytes) {
-        if (debug)
-          console.log(
-            chalk.gray(
-              `Skipping large file: ${path.relative(
-                repoRoot,
-                fullPath
-              )} (${formatFileSize(stats.size)})`
-            )
-          );
-        skippedFiles++;
-        return;
-      }
+      const fileName = path.basename(fullPath);
 
       if (!includeAll) {
+        if (
+          exclusions.fileExclusions.includes(fileName) ||
+          exclusions.prefixExclusions.some((prefix) =>
+            fileName.startsWith(prefix)
+          )
+        ) {
+          if (debug) {
+            console.log(
+              chalk.gray(
+                `Skipping excluded file: ${path.relative(repoRoot, fullPath)}`
+              )
+            );
+          }
+          skippedFiles++;
+          return;
+        }
+
+        if (stats.size > thresholdBytes) {
+          if (debug)
+            console.log(
+              chalk.gray(
+                `Skipping large file: ${path.relative(
+                  repoRoot,
+                  fullPath
+                )} (${formatFileSize(stats.size)})`
+              )
+            );
+          skippedFiles++;
+          return;
+        }
+
         if (await isBinaryFile(fullPath)) {
           if (debug)
             console.log(
@@ -95,11 +114,26 @@ export async function processFiles(targetPath, options) {
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
 
-      if (
-        entry.isDirectory() &&
-        entry.name !== "node_modules" &&
-        entry.name !== ".git"
-      ) {
+      if (entry.isDirectory()) {
+        if (
+          !includeAll &&
+          (exclusions.directoryExclusions.includes(entry.name) ||
+            exclusions.prefixExclusions.some((prefix) =>
+              entry.name.startsWith(prefix)
+            ))
+        ) {
+          if (debug) {
+            console.log(
+              chalk.gray(
+                `Skipping excluded directory: ${path.relative(
+                  repoRoot,
+                  fullPath
+                )}`
+              )
+            );
+          }
+          continue;
+        }
         await processDirectory(fullPath);
         continue;
       }
