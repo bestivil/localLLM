@@ -59,7 +59,6 @@ export async function validateInput(input, fileName) {
         );
       }
     } else {
-      // Should not happen with fs.stat, but handle defensively
       throw new Error(
         `Path '${sourcePath}' is neither a file nor a directory.`
       );
@@ -68,10 +67,8 @@ export async function validateInput(input, fileName) {
     if (error.code === "ENOENT") {
       throw new Error(`Local path '${sourcePath}' not found.`);
     } else if (error.message.includes("not a git repository")) {
-      // Re-throw the specific git error from the inner try-catch
       throw error;
     }
-    // Re-throw other fs.stat errors
     throw error;
   }
 }

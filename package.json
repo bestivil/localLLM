@@ -8,6 +8,8 @@
     "filesize": "^10.1.2",
     "glob": "^10.4.2",
     "isbinaryfile": "^5.0.2",
-    "meow": "^13.2.0"
+    "meow": "^13.2.0",
+    "acorn": "^8.1.0",
+    "acorn-walk": "^8.2.0"
   }
 }

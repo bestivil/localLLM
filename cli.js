@@ -119,6 +119,7 @@ export async function writeOutput(content, outputPath) {
  */
 export async function main() {
   try {
+    const mainRepoPath = cli.input[0];
     const fileFlag = cli.flags.file;
     const outputFlag = cli.flags.output;
     const modulesFlag = cli.flags.modules;
@@ -152,21 +153,14 @@ export async function main() {
       }
     }
 
-    const allPackages = await findWorkspacePackages(resolvedPath);
+    const allPackages = await findWorkspacePackages(cli.input[0]);
     await createWorkspaceIndex(allPackages, repoRoot, debugFlag);
-
-    console.log({
-      includeDependencies: cli.flags.includeDependencies,
-      directDeps: cli.flags.directDeps,
-    });
 
     if (!!fileFlag) {
       const fileResult = await handleFileFlag(
         resolvedPath,
         repoRoot,
-        cli.flags.includeDependencies,
-        cli.flags.debug,
-        cli.flags.directDeps
+        cli.flags.debug
       );
       targetPaths = fileResult.targetPaths;
       processingMode = fileResult.processingMode;
@@ -195,19 +189,6 @@ export async function main() {
       let totalProcessedFiles = 0;
       let totalSkippedFiles = 0;
 
-      if (process.env.NODE_ENV !== "test" || cli.flags.debug) {
-        const displayPaths = targetPaths.map(
-          (p) => path.relative(repoRoot, p) || path.basename(p)
-        );
-        console.log(
-          chalk.blue(`Processing targets (${processingMode} mode):`),
-          displayPaths
-        );
-        if (cli.flags.debug) {
-          console.log(chalk.blue("Debug: Output path:"), outputPath);
-        }
-      }
-
       for (const targetPath of targetPaths) {
         if (process.env.NODE_ENV !== "test" || cli.flags.debug) {
           const displayPath =
@@ -229,9 +210,6 @@ export async function main() {
           console.error(
             chalk.red(`Error processing ${targetPath}: ${processError.message}`)
           );
-          if (cli.flags.debug) {
-            console.error(processError.stack);
-          }
         }
       }
 

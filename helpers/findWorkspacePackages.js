@@ -12,6 +12,7 @@ import { cli } from "../cli.js";
  * @throws {Error} If pnpm-workspace.yaml is missing or invalid, or package.json is missing/invalid
  */
 export async function findWorkspacePackages(repoRoot) {
+  console.log({ repoRoot });
   const workspaceFilePath = path.join(repoRoot, "pnpm-workspace.yaml");
   const packages = new Map();
 

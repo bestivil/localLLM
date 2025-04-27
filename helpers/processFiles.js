@@ -33,7 +33,6 @@ export async function processFiles(targetPath, options) {
    */
   async function processSingleFile(fullPath, stats) {
     try {
-      // Check size threshold
       if (!includeAll && stats.size > thresholdBytes) {
         if (debug)
           console.log(
@@ -48,7 +47,6 @@ export async function processFiles(targetPath, options) {
         return;
       }
 
-      // Check if binary
       if (!includeAll) {
         if (await isBinaryFile(fullPath)) {
           if (debug)
@@ -62,7 +60,6 @@ export async function processFiles(targetPath, options) {
         }
       }
 
-      // Read and add content
       const content = await fs.readFile(fullPath, "utf8");
       const relativePath = path.relative(repoRoot, fullPath);
 
