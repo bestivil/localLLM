@@ -10,21 +10,33 @@ import { getImportsFromFile } from "./importExport.js";
  * @param {boolean} debug - Whether debug mode is enabled.
  * @returns {Promise<{targetPaths: string[], processingMode: string}>} Paths to process and the mode.
  */
-export async function handleFileFlag(requestedFile, repoRoot, debug) {
+export async function handleFileFlag(
+  requestedFiles,
+  repoRoot,
+  debug,
+  onlyExtractFile
+) {
   const targetPathsSet = [];
-  const processingMode = "file_with_direct_dependencies";
 
   const workspacePackagesMap = await loadWorkspaceIndex(repoRoot, debug);
-  const imports = await getImportsFromFile(requestedFile);
 
-  const directDependencies = await getDirectDependencies(
-    requestedFile,
-    repoRoot,
-    workspacePackagesMap,
-    debug,
-    imports
-  );
-  targetPathsSet.push(...directDependencies);
+  if (onlyExtractFile) {
+    targetPathsSet.push(...requestedFiles);
+    return { targetPaths: targetPathsSet, processingMode: "file" };
+  }
 
-  return { targetPaths: targetPathsSet, processingMode };
+  for (const requestedFile of requestedFiles) {
+    const directDependencies = await getDirectDependencies(
+      requestedFile,
+      repoRoot,
+      workspacePackagesMap,
+      debug
+    );
+    targetPathsSet.push(...directDependencies);
+  }
+
+  return {
+    targetPaths: Array.from(targetPathsSet),
+    processingMode: "file_with_direct_dependencies",
+  };
 }

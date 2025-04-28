@@ -10,65 +10,30 @@ const execAsync = promisify(exec);
 /**
  * Validates the command line input, checking if it's a file or a git repository directory.
  * @param {string[]} input - Command line arguments
- * @returns {Promise<{resolvedPath: string, type: 'file' | 'directory'}>} Validated path and its type.
+ * @returns {Promise<{resolvedPaths: string[]}>} Validated paths
  * @throws {Error} If input is missing, path doesn't exist, or it's a non-git directory.
  */
-export async function validateInput(input, fileName) {
+export async function validateIsFiles(input, fileNames) {
   if (!input || input.length === 0) {
     throw new Error("Local repository path is required");
   }
 
-  const sourcePath = input[0];
-  const repoRoot = await execAsync(
-    `git -C "${sourcePath}" rev-parse --show-toplevel`
-  );
-
   try {
-    const stats = await fs.stat(fileName ?? sourcePath);
+    const filesToCheck = [...fileNames];
+    const fileResults = await Promise.all(
+      filesToCheck.map(async (fileName) => {
+        const stats = await fs.stat(fileName);
+        return { fileName, stats };
+      })
+    );
 
-    if (stats.isFile()) {
-      if (cli.flags.debug) {
-        console.log(chalk.blue("Debug: Valid file path:"), sourcePath);
-      }
-      return {
-        resolvedPath: fileName,
-        type: "file",
-        repoRoot: repoRoot.stdout.trim(),
-        fileDirectoryName: path.dirname(fileName),
-      };
-    } else if (stats.isDirectory()) {
-      try {
-        await execAsync(
-          `git -C "${sourcePath}" rev-parse --is-inside-work-tree`
-        );
-
-        if (cli.flags.debug) {
-          console.log(
-            chalk.blue("Debug: Valid local git repository directory:"),
-            sourcePath
-          );
-        }
-        return {
-          resolvedPath: path.resolve(sourcePath),
-          type: "directory",
-          repoRoot: repoRoot.stdout.trim(),
-        };
-      } catch (gitError) {
-        throw new Error(
-          `Directory '${sourcePath}' exists but is not a git repository. Use a file path or a git directory.`
-        );
-      }
-    } else {
-      throw new Error(
-        `Path '${sourcePath}' is neither a file nor a directory.`
-      );
-    }
+    const allFiles = fileResults
+      .filter((result) => result.stats.isFile())
+      .map((result) => result.fileName);
+    return {
+      resolvedPaths: allFiles,
+    };
   } catch (error) {
-    if (error.code === "ENOENT") {
-      throw new Error(`Local path '${sourcePath}' not found.`);
-    } else if (error.message.includes("not a git repository")) {
-      throw error;
-    }
     throw error;
   }
 }

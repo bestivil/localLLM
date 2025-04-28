@@ -4,7 +4,7 @@ import path from "path";
 import chalk from "chalk";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { getExportsFromFile } from "./importExport.js";
+import { getExportsFromFile, getImportsFromFile } from "./importExport.js";
 
 const execAsync = promisify(exec);
 
@@ -20,8 +20,7 @@ export async function getDirectDependencies(
   filePath,
   repoRoot,
   workspaceIndex,
-  debugFlag,
-  imports
+  debugFlag
 ) {
   if (debugFlag) {
     console.log(
@@ -33,6 +32,8 @@ export async function getDirectDependencies(
       )
     );
   }
+
+  const imports = await getImportsFromFile(filePath);
 
   const directDependencyPaths = [filePath];
 

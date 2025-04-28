@@ -5,11 +5,12 @@ import chalk from "chalk";
 import fs from "fs/promises";
 import path from "path";
 import { processFiles } from "./helpers/processFiles.js";
-import { validateInput } from "./helpers/validateInput.js";
+import { validateIsFiles } from "./helpers/validateInput.js";
 import { handleModuleFlag } from "./helpers/handleModuleFlag.js";
 import { createWorkspaceIndex } from "./helpers/workspaceIndex.js";
 import { findWorkspacePackages } from "./helpers/findWorkspacePackages.js";
 import { handleFileFlag } from "./helpers/handleFileFlag.js";
+import { getRepositoryRoot } from "./helpers/utils.js";
 const helpText = `
   ${chalk.bold("Usage")}
     $ localllm <local-repo-path> [options]
@@ -62,9 +63,10 @@ export const cli = meow(helpText, {
       shortFlag: "m",
       isMultiple: true,
     },
-    file: {
+    files: {
       type: "string",
       shortFlag: "f",
+      isMultiple: true,
     },
     onlyExtractSingleFile: {
       type: "boolean",
@@ -120,49 +122,30 @@ export async function writeOutput(content, outputPath) {
 export async function main() {
   try {
     const mainRepoPath = cli.input[0];
-    const fileFlag = cli.flags.file;
+    const filesFlag = cli.flags.files;
     const outputFlag = cli.flags.output;
     const modulesFlag = cli.flags.modules;
     const debugFlag = cli.flags.debug;
-    const onlyExtractSingleFileFlag = cli.flags.onlyExtractSingleFile;
-    const { resolvedPath, type, fileDirectoryName, repoRoot } =
-      await validateInput(cli.input, fileFlag);
+    const onlyExtractFile = cli.flags.onlyExtractSingleFile;
 
-    let targetPaths = [];
-    let processingMode = "unknown";
-    let outputPath = outputFlag;
-    const repoName = path.basename(repoRoot);
-    const onlyExtractSingleFile = onlyExtractSingleFileFlag;
-
-    if (type === "file") {
-      targetPaths = onlyExtractSingleFile
-        ? [resolvedPath]
-        : [fileDirectoryName];
-      processingMode = "file";
-      if (!outputPath) {
-        outputPath = `${repoName}.txt`;
-      }
-      if (debugFlag) {
-        console.log(
-          chalk.blue(`Debug: Processing single file: ${resolvedPath}`)
-        );
-      }
-    } else if (type === "directory") {
-      if (!outputPath) {
-        outputPath = `${repoName}.txt`;
-      }
-    }
-
-    const allPackages = await findWorkspacePackages(cli.input[0]);
+    const repoRoot = await getRepositoryRoot(mainRepoPath);
+    const allPackages = await findWorkspacePackages(mainRepoPath);
     await createWorkspaceIndex(allPackages, repoRoot, debugFlag);
 
-    if (!!fileFlag) {
+    const { resolvedPaths } = await validateIsFiles(cli.input, filesFlag);
+
+    let processingMode = "unknown";
+    let targetPaths = [...resolvedPaths];
+    let outputPath = outputFlag ?? `${path.basename(repoRoot)}.txt`;
+
+    if (filesFlag) {
       const fileResult = await handleFileFlag(
-        resolvedPath,
+        resolvedPaths,
         repoRoot,
-        cli.flags.debug
+        cli.flags.debug,
+        onlyExtractFile
       );
-      targetPaths = fileResult.targetPaths;
+      targetPaths = [...fileResult.targetPaths];
       processingMode = fileResult.processingMode;
     } else {
       const moduleResult = await handleModuleFlag(
@@ -171,19 +154,11 @@ export async function main() {
         modulesFlag,
         debugFlag
       );
-      targetPaths = moduleResult.targetPackageDirs;
+      targetPaths = [...moduleResult.targetPackageDirs];
       processingMode = moduleResult.processingMode;
     }
 
-    if (!outputPath) {
-      console.warn(
-        chalk.yellow(
-          "Warning: Output path could not be determined. Using default 'output.txt'."
-        )
-      );
-      outputPath = "output.txt";
-    }
-
+    targetPaths = [...new Set(targetPaths)];
     if (targetPaths.length > 0) {
       let combinedContent = "";
       let totalProcessedFiles = 0;
@@ -227,7 +202,7 @@ export async function main() {
             ? "Warning: No processable text content found in the selected packages. Output file will be empty or not created."
             : processingMode === "file"
             ? `Warning: No processable text content found in the input file: ${path.basename(
-                resolvedPath
+                targetPaths[0]
               )}. Output file will be empty or not created.`
             : "Warning: No processable text content found in the repository. Output file will be empty or not created.";
         console.warn(chalk.yellow(warningMsg));
