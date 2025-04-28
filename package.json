@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "main": "cli.js",
+  "scripts": {
+    "cli": "node cli.js",
+    "select": "node select.js"
+  },
   "dependencies": {
     "chalk": "^5.3.0",
     "filesize": "^10.1.2",
