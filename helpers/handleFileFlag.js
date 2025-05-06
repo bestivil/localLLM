@@ -22,7 +22,7 @@ export async function handleFileFlag(
 
   if (onlyExtractFile) {
     targetPathsSet.push(...requestedFiles);
-    return { targetPaths: targetPathsSet, processingMode: "file" };
+    return { targetPaths: Array.from(targetPathsSet), processingMode: "file" };
   }
 
   for (const requestedFile of requestedFiles) {

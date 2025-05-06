@@ -41,11 +41,14 @@ async function getFile(repositoryPath) {
       name: "file",
       message: "Search for a file:",
       source: async (searchTerm) => {
-        const files = await glob("**/*", {
+        const files = [];
+        for await (const file of glob.stream("**/*", {
           cwd: repositoryPath,
           ignore: ["**/node_modules/**", "**/.git/**"],
           dot: false,
-        });
+        })) {
+          files.push(file);
+        }
 
         const fileNames = files
           .map((file) => {
