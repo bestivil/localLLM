@@ -6,8 +6,11 @@ import path from "path";
 import { glob } from "glob";
 import { exec } from "child_process";
 import { promisify } from "util";
-
-const excludedExtensions = [".json"];
+import {
+  buildFileIndex,
+  searchFileIndex,
+  isIndexReady,
+} from "./fileIndexer.js";
 
 const execAsync = promisify(exec);
 /**
@@ -41,33 +44,12 @@ async function getFile(repositoryPath) {
       name: "file",
       message: "Search for a file:",
       source: async (searchTerm) => {
-        const files = [];
-        for await (const file of glob.stream("**/*", {
-          cwd: repositoryPath,
-          ignore: ["**/node_modules/**", "**/.git/**"],
-          dot: false,
-        })) {
-          files.push(file);
+        if (!isIndexReady()) {
+          console.warn("Index not ready, attempting to build...");
+          await buildFileIndex(repositoryPath);
         }
-
-        const fileNames = files
-          .map((file) => {
-            const fullPath = path.join(repositoryPath, file);
-            return fs.statSync(fullPath).isFile() &&
-              !excludedExtensions.some((ext) => file.endsWith(ext))
-              ? file
-              : null;
-          })
-          .filter(Boolean);
-        const uniqueNames = [...new Set(fileNames)];
-
-        if (!searchTerm) return uniqueNames;
-
-        return uniqueNames
-          .filter((name) =>
-            name.toLowerCase().includes(searchTerm.toLowerCase())
-          )
-          .slice(0, 5);
+        const results = searchFileIndex(searchTerm);
+        return results.slice(0, 10);
       },
     },
   ]);
@@ -96,7 +78,10 @@ async function run() {
     console.error(
       `\nError: '${absolutePath}' is not a valid Git repository directory.`
     );
+    process.exit(1);
   }
+
+  await buildFileIndex(absolutePath);
 
   const selectedFiles = [];
   let addAnother = true;
