@@ -16,11 +16,7 @@ export const createWorkspaceIndex = async (allPackages, repoPath, debug) => {
         exports: packageInfo.exports || {},
       })
     );
-    const fileContent = `export const workspaces = ${JSON.stringify(
-      workspaceData,
-      null,
-      2
-    )};`;
+    const fileContent = JSON.stringify(workspaceData, null, 2);
     try {
       await fs.writeFile(workspaceIndexPath, fileContent);
       if (debug) {
@@ -56,8 +52,6 @@ export const createWorkspaceIndex = async (allPackages, repoPath, debug) => {
  */
 export async function loadWorkspaceIndex(repoRoot, debug) {
   const workspaceIndexPath = path.join(repoRoot, "workspace-index.js");
-  const workspaceIndexUrl =
-    pathToFileURL(workspaceIndexPath).href + `?t=${Date.now()}`;
 
   if (debug) {
     console.log(
@@ -66,40 +60,30 @@ export async function loadWorkspaceIndex(repoRoot, debug) {
   }
 
   try {
-    const workspaceModule = await import(workspaceIndexUrl);
-    if (workspaceModule && Array.isArray(workspaceModule.workspaces)) {
-      const packageMap = new Map();
-      workspaceModule.workspaces.forEach((pkg) => {
-        if (pkg && pkg.name && pkg.path) {
-          packageMap.set(pkg.name, pkg);
-        } else if (debug) {
-          console.warn(
-            chalk.gray(
-              `  Skipping invalid entry in workspace-index.js: ${JSON.stringify(
-                pkg
-              )}`
-            )
-          );
-        }
-      });
-      if (debug) {
-        console.log(
-          chalk.gray(
-            `  Successfully loaded ${packageMap.size} packages from workspace index.`
-          )
-        );
-      }
-      return packageMap;
-    } else {
-      if (debug) {
+    const fileContent = await fs.readFile(workspaceIndexPath, "utf8");
+    const workspaceData = JSON.parse(fileContent);
+    const packageMap = new Map();
+    workspaceData.forEach((pkg) => {
+      if (pkg && pkg.name && pkg.path) {
+        packageMap.set(pkg.name, pkg);
+      } else if (debug) {
         console.warn(
           chalk.gray(
-            `  workspace-index.js loaded but 'workspaces' array not found or invalid.`
+            `  Skipping invalid entry in workspace-index.js: ${JSON.stringify(
+              pkg
+            )}`
           )
         );
       }
-      return new Map();
+    });
+    if (debug) {
+      console.log(
+        chalk.gray(
+          `  Successfully loaded ${packageMap.size} packages from workspace index.`
+        )
+      );
     }
+    return packageMap;
   } catch (error) {
     if (
       debug ||

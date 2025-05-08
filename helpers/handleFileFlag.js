@@ -14,11 +14,12 @@ export async function handleFileFlag(
   requestedFiles,
   repoRoot,
   debug,
-  onlyExtractFile
+  onlyExtractFile,
+  allPackages
 ) {
   const targetPathsSet = [];
 
-  const workspacePackagesMap = await loadWorkspaceIndex(repoRoot, debug);
+  //const workspacePackagesMap = await loadWorkspaceIndex(repoRoot, debug); -> use for loading future cached workspace-index.js when no rebased changes
 
   if (onlyExtractFile) {
     targetPathsSet.push(...requestedFiles);
@@ -29,7 +30,7 @@ export async function handleFileFlag(
     const directDependencies = await getDirectDependencies(
       requestedFile,
       repoRoot,
-      workspacePackagesMap,
+      allPackages,
       debug
     );
     targetPathsSet.push(...directDependencies);

@@ -33,11 +33,10 @@ export async function getDirectDependencies(
     );
   }
 
-  const imports = await getImportsFromFile(filePath);
-
   const directDependencyPaths = [filePath];
 
   try {
+    const imports = await getImportsFromFile(filePath);
     for (const importItem of imports) {
       const resolvedPath = await findPackageEntryPointRelativePath(
         importItem.package,
@@ -51,7 +50,6 @@ export async function getDirectDependencies(
     }
   } catch (error) {
     console.error(chalk.red(`Error processing file ${filePath}: ${error}`));
-    throw error;
   }
 
   return [...directDependencyPaths];

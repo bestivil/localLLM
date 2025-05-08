@@ -130,7 +130,7 @@ export async function main() {
 
     const repoRoot = await getRepositoryRoot(mainRepoPath);
     const allPackages = await findWorkspacePackages(mainRepoPath);
-    await createWorkspaceIndex(allPackages, repoRoot, debugFlag);
+    // await createWorkspaceIndex(allPackages, repoRoot, debugFlag); -> use for future caching when no rebased changes
 
     const { resolvedPaths } = await validateIsFiles(cli.input, filesFlag);
 
@@ -143,7 +143,8 @@ export async function main() {
         resolvedPaths,
         repoRoot,
         cli.flags.debug,
-        onlyExtractFile
+        onlyExtractFile,
+        allPackages
       );
       targetPaths = [...fileResult.targetPaths];
       processingMode = fileResult.processingMode;
