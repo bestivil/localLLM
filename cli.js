@@ -5,9 +5,8 @@ import chalk from "chalk";
 import fs from "fs/promises";
 import path from "path";
 import { processFiles } from "./helpers/processFiles.js";
-import { validateIsFiles } from "./helpers/validateInput.js";
+import { validateIsFilesOrDir } from "./helpers/validateInput.js";
 import { handleModuleFlag } from "./helpers/handleModuleFlag.js";
-import { createWorkspaceIndex } from "./helpers/workspaceIndex.js";
 import { findWorkspacePackages } from "./helpers/findWorkspacePackages.js";
 import { handleFileFlag } from "./helpers/handleFileFlag.js";
 import { getRepositoryRoot } from "./helpers/utils.js";
@@ -41,6 +40,7 @@ const exit = (code) => {
 export const cli = meow(helpText, {
   importMeta: import.meta,
   flags: {
+
     output: {
       type: "string",
       shortFlag: "o",
@@ -130,9 +130,8 @@ export async function main() {
 
     const repoRoot = await getRepositoryRoot(mainRepoPath);
     const allPackages = await findWorkspacePackages(mainRepoPath);
-    // await createWorkspaceIndex(allPackages, repoRoot, debugFlag); -> use for future caching when no rebased changes
 
-    const { resolvedPaths } = await validateIsFiles(cli.input, filesFlag);
+    const { resolvedPaths } = await validateIsFilesOrDir(cli.input, filesFlag);
 
     let processingMode = "unknown";
     let targetPaths = [...resolvedPaths];

@@ -1,9 +1,6 @@
 import fs from "fs/promises";
-import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
-import chalk from "chalk";
-import { cli } from "../cli.js";
 
 const execAsync = promisify(exec);
 
@@ -13,7 +10,7 @@ const execAsync = promisify(exec);
  * @returns {Promise<{resolvedPaths: string[]}>} Validated paths
  * @throws {Error} If input is missing, path doesn't exist, or it's a non-git directory.
  */
-export async function validateIsFiles(input, fileNames) {
+export async function validateIsFilesOrDir(input, fileNames) {
   if (!input || input.length === 0) {
     throw new Error("Local repository path is required");
   }
